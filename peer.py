@@ -1,4 +1,4 @@
-cimport socket
+import socket
 import sys
 import threading
 import csv
