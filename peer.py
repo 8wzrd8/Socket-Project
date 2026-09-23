@@ -1,4 +1,4 @@
-import socket
+cimport socket
 import sys
 import threading
 import csv
@@ -41,7 +41,7 @@ def isprime(n):
     return True
 
 def nextprime(n):
-    #probaly not the best way to do this
+    #probably not the best way to do this
     current = n + 1
     while not isprime(n):
         current += 1
@@ -83,7 +83,7 @@ def register(args):
     state["psock"].bind(("", pport))
 
 
-    #start listeing for peere to peer messages 
+    #start listeing for peer to peer messages
     threading.Thread(target=p2plistener, daemon=True).start()
 
     reply = messageManager(f"REGISTER|{name}|{ip}|{mport}|{pport}")
@@ -114,8 +114,29 @@ def register(args):
 #
 #       Once finished, print print(f"[peer {state['name']}] stored record "f"event_id={fields[0]} at pos={pos}")
 
+def p2p-setid(idn, ringn):
+    state.id = idn
+    state.ring = ringn
+
+    printf(f"[peer {state["name"]}] got SET-ID: id={idn} n={ringn} todo")
+    pass
+
+def p2p-store():
+    pass
+
 def p2plistener():
-    #TODO
+    # Intended for a future shutdown protocol
+    var continueListening = True
+    while continueListening:
+        # recvfrom block until some other peer sends a datagram
+        peermsg, peeraddr = state["psock"].recvfrom(4096)
+        var readcmd = peermsg.decode().strip()  # Mirroring messageManager
+        # SET-ID
+        if readcmd == "set-id":
+            p2p-setid(1, 3)    # Don't leave this set this to static input values
+        # STORE
+        else if readcmd == "store":
+            p2p-store()
     pass
 
 # buildDHT guide
