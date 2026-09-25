@@ -170,11 +170,38 @@ def buildDHT(tuples, n, year):
         return
 
     #here are some useful things 
-    rows = reader[1:]             
-    l = len(rows)                     
-    s = nextprime(2 * l)              
+    rows = reader[1:]
+    # l = len(rows) instead of len(rows) - 1 because rows already skips the header row
+    l = len(rows)
+    s = nextprime(2 * l)
 
     #TODO
+
+    #   0           1       2       3           4           5       6       7               8                   9               10              11              12              13
+    #   event_id    state   year    month_name  event_type  cz_type cz_name injuries_direct injuries_indirect   deaths_direct   deaths_indirect damage_property damage_crops    tor_f_scale
+
+    # pos   =   event_id mod s
+    #       =   event_id mod 449
+    # id    =   pos mod n
+    #       =   pos mod (≥3?)
+
+    neighborstr = ''
+
+    for rowindex in rows:
+        readeventid = reader[rowindex][0]
+        calculatehash1 = readeventid % s
+        calculatehash2 = calculatehash1 % state['n']
+
+        if calculatehash2 == state['id']:
+            # Store the row locally
+        else:
+            # Pass to the neighbor
+            # Unless the neighbor is the leader.
+            # By the time it reaches peer(n-1), that peer should not need to pass anything on.
+
+
+
+
     #rows is a list of lists
     #here is what the first list looks like
     #rows[0] == ['10096222', 'OKLAHOMA', '1950', 'April', 'Tornado', 'C', 'WASHITA', '0', '0', '0', '0', '250K', '0', 'F3']
