@@ -177,10 +177,12 @@ def buildDHT(tuples, n, year):
     for i in range(1, n):
         msgtuplelist = f"SET-ID|{i}|{n}|{tuplesString}"
         # ipaddress is coded as (ipv4, port)
-        peerip = tuples[i % n][1]
-        peerport = tuples[i % n][2]
+        peername = tuples[i][0]
+        peerip = tuples[i][1]
+        peerport = tuples[i][2]
         state["psock"].sendto(msgtuplelist.encode(), (peerip, peerport))
 
+        print(f"[peer {state['name']}] sent SET-ID (id={i}) to {name_i}")
     
 
     # 2. load the dataset and distribute records around the ring
@@ -194,7 +196,7 @@ def buildDHT(tuples, n, year):
     #       =   pos mod (≥3?)
 
     writetotable = True
-    writetofile = True
+    writetofile = False
     filename = f"details-{year}.csv"
     peerdhtname = 'peer-' + str(state['id']) + '-' + str(filename)
 
@@ -229,10 +231,13 @@ def buildDHT(tuples, n, year):
                         locallist = rowindex
                         writer.writerow(locallist)
                 else:
-                    pass
                     # Pass to the neighbor
                     # Unless the neighbor is the leader.
                     # By the time it reaches peer(n-1), that peer should not need to pass anything on.
+                    targetid = int(state['id'])
+                    targetid = (targetid + 1) % n
+                    targetid = str(int(state['id'] + 1))
+                    send_store(targetid, entryrow, rowindex)
     except FileNotFoundError:
         print(f"[peer {state['name']}] ERROR: cannot find {filename}")
         return
