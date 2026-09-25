@@ -1,0 +1,31 @@
+There are two parts in buildDHT that still need to be finished, 
+the p2plistener is now done and some of your code for the listener
+needed to be changed (just general syntax so it could compile).
+
+Once you finish the code, you can test it by opening up a four 
+new terminals and running the following.
+
+#terminal 1
+python3 manager.py 15000
+
+#terminal 2
+python3 peer.py 127.0.0.1 15000
+> register Sarah 127.0.0.1 15001 15002
+
+#terminal 3
+python3 peer.py 127.0.0.1 15000
+> register Ali 127.0.0.1 15003 15004
+
+#terminal 4
+python3 peer.py 127.0.0.1 15000
+> register Prateek 127.0.0.1 15005 15006
+
+#back in terminal2
+> setup-dht 3 1950
+
+Also, you might need to install the library, run this: 
+
+pip install sympy
+
+and yes, you use pip to install it.
+

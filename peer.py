@@ -2,73 +2,53 @@ import socket
 import sys
 import threading
 import csv
+from sympy import nextprime
 
 state = {
     "name": None,
-    "msock": None,
-    "psock": None,
-    "address": None,
-    "id": None,
-    "n": None,
-    "neighbor": None,
-    "table": {},
-    "tuples": [],
+    "msock": None,      
+    "psock": None,      
+    "address": None,    
+    "id": None,       
+    "n": None,         
+    "neighbor": None,    
+    "table": {},         
+    "tuples": [],       
     "leader": False,
-    "count": {},
+    "counts": {},        
 }
 
-
-#both isprime and nextprime are in the
-#sympy library, i didnt want to use a third
-#party library so i made them myself 
-def isprime(n):
-    #all from def of a prime
-    if n < 2:
-        return False
-    
-    if n == 2:
-        return True
-    
-    if n % 2 == 0:
-        return False
-
-    i = 3
-    while i * i <= n:
-        if n % i == 0:
-            return False
-        i += 2
-
-    return True
-
-def nextprime(n):
-    #probaly not the best way to do this
-    current = n + 1
-    while not isprime(n):
-        current += 1
-
-    return current
 
 def messageManager(message):
     #basically the same as the code in manager
     state["msock"].sendto(message.encode(), state["address"])
-    result = state["msock"].recvfrom(4096)
-    data = result[0]
+    data, _ = state["msock"].recvfrom(8192)
     return data.decode().strip()
 
+
 def parseTuples(tuples):
-    #takes a tuple such as:
+    #takes a string such as:
     #"Sarah,127.0.0.1,6001;Ali,127.0.0.1,6002;Prateek,127.0.0.1,6003"
     #converts it too a list (name, ip, pport)
-    list = []
+    result = []
     for chunk in tuples.split(";"):
         name, ip, pport = chunk.split(",")
-        list.append((name, ip, int(pport)))
+        result.append((name, ip, int(pport)))
 
-    return list
+    return result
+
+
+def serializeTuples(tuples):
+    #inverse of parseTuples
+    parts = []
+    for name, ip, pport in tuples:
+        parts.append(f"{name},{ip},{pport}")
+
+    return ";".join(parts)
+
 
 
 def register(args):
-
     #register has args name, ip, mport and pport
     name = args[0]
     ip = args[1]
@@ -82,90 +62,151 @@ def register(args):
     state["psock"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     state["psock"].bind(("", pport))
 
-
     #start listeing for peere to peer messages 
     threading.Thread(target=p2plistener, daemon=True).start()
 
     reply = messageManager(f"REGISTER|{name}|{ip}|{mport}|{pport}")
     print(f"[peer {name}] register -> {reply}")
 
-# p2plistener guide
-# (this code will all be nested in a while True)
-# there are three main parts to this code
-# 1. recvfrom block until some other peer sends a datagram
-# 2.    if cmd == "SET-ID":
-#
-#       "On receipt of a set-id,
-#       peer_i sets its identifier to i and the ring size to n. It
-#       stores the 3-tuple of peer_(i+1) mod n to use as the address
-#       of its right neighbour."
-#
-#       Once finished, print(f"[peer {state['name']}] got SET-ID: id={id} n={n} "f"neighbor={right[0]}")
 
-# 3. elif cmd == "STORE"
-#
-#       "A storm-event record is being
-#       routed around the ring toward whichever node is responsible
-#       for storing it. target_id is that destination node's ring
-#       identifier; pos is the exact slot in ITS local hash table.""
-#
-#       Check if our target id is equal to the state id, if true then print
-#       the message below if false forward the record to our neighbor 
-#
-#       Once finished, print print(f"[peer {state['name']}] stored record "f"event_id={fields[0]} at pos={pos}")
+def send_store(target_id, pos, fields):
+    #forward a record one hop along the ring to our right neighbor.
+    #used both by the leader (initial distribution) and by any peer
+    #that receives a STORE meant for someone further down the ring.
+    record_str = ",".join(fields)
+    msg = f"STORE|{target_id}|{pos}|{record_str}"
+    _, ip, pport = state["neighbor"]
+    state["psock"].sendto(msg.encode(), (ip, pport))
+
+
+def p2p_setid(idn, ringn, tuples_str):
+    #"On receipt of a set-id, peer_i sets its identifier to i and the ring
+    #size to n. It stores the 3-tuple of peer_(i+1) mod n to use as the
+    #address of its right neighbour."
+    state["id"] = idn
+    state["n"] = ringn
+    tuples = parseTuples(tuples_str)
+    state["tuples"] = tuples
+    state["neighbor"] = tuples[(idn + 1) % ringn]
+
+    print(f"[peer {state['name']}] got SET-ID: id={idn} n={ringn} "
+          f"neighbor={state['neighbor'][0]}")
+
+
+def p2p_store(target_id, pos, fields):
+    #"A storm-event record is being routed around the ring toward whichever
+    #node is responsible for storing it. target_id is that destination
+    #node's ring identifier; pos is the exact slot in ITS local hash table."
+    if target_id == state["id"]:
+        state["table"][pos] = fields
+        print(f"[peer {state['name']}] stored record "
+              f"event_id={fields[0]} at pos={pos}")
+    else:
+        send_store(target_id, pos, fields)
+
 
 def p2plistener():
-    #TODO
-    pass
+    #Intended for a future shutdown protocol
+    continueListening = True
+    while continueListening:
+        #recvfrom blocks until some other peer sends a datagram
+        peermsg, peeraddr = state["psock"].recvfrom(65536)
+        msg = peermsg.decode().strip()   
+        parts = msg.split("|")
+        cmd = parts[0].upper()
 
-# buildDHT guide
-# the only peer running this command is the one who issued setup (the peer leader )
-# assign state[] values given the args and knowing that it is a leader (including counts)
-#
-# there are three main parts to this code
-# 1.    For i = 1 .. n-1, tell peer_i "you are node i". We send it the full
-#       tuple list too, so each peer can independently compute its own right
-#       neighbor the same way we just did above.
-#       At the very end of this loop include: print(f"[peer {state['name']}] sent SET-ID (id={i}) to {name_i}")
-#
-# 2. load the dataset and share records 
-#
-#    filename = f"details-{year}.csv"
-#    try:
-#        with open(filename, newline="") as f:
-#            reader = list(csv.reader(f))
-#    except FileNotFoundError:
-#        print(f"[peer {state['name']}] ERROR: cannot find {filename}")
-#        return
-#
-#    Now we need to get the data from the csv
-#    skip the header, then for fields in rows:
-#    process id, pos, tagetid, and counts @ that targetid
-#    if target_id == 0:
-#            state["table"][pos] = fields
-#    else:
-#       this code is the same as the store branch in p2plistener
-#   
-#   
-#
-# 3. print configuration & finish
-#
-#    print(f"[peer {state['name']}] record distribution:")
-#    for i in range(n):
-#        print(f"    node {i}: {state['counts'][i]} records")
-#     
-#    reply = messageManager(f"DHT-COMPLETE|{state['name']}")
-#    print(f"[peer {state['name']}] dht-complete -> {reply}")
+        if cmd == "SET-ID":
+            idn = int(parts[1])
+            ringn = int(parts[2])
+            tuples_str = parts[3]
+
+            p2p_setid(idn, ringn, tuples_str)
+
+        elif cmd == "STORE":
+            target_id = int(parts[1])
+            pos = int(parts[2])
+            fields = parts[3].split(",")
+            
+            p2p_store(target_id, pos, fields)
+
+        else:
+            print(f"[peer {state['name']}] unknown p2p message: {msg}")
+
 
 def buildDHT(tuples, n, year):
+    # only the peer that issued setup-dht (the leader) runs this
+    state["tuples"] = tuples
+    state["n"] = n
+    state["id"] = 0
+    state["leader"] = True
+    state["neighbor"] = tuples[1 % n]
+    state["counts"] = {i: 0 for i in range(n)}
+
+    tuplesString = serializeTuples(tuples)
+
     #TODO
-    pass
-
-
+    # 1.    For in range i = 1 .. n-1, tell peer_i "you are node i". We send it the full
+    #       tuple list too, so each peer can independently compute its own right
+    #       neighbor the same way we just did above.
+    #       
+    #
+    #       at the top of this loop we start by getting the name, ip and port from the tuple
+    #       here is how you would get the name name_i = tuples[i][0]
+    #       follow the same format as all th other msg(s) i.e
+    #       f"SET-ID|{i}|{n}|{tuplesString}"
+    #       We then need to encode this meesage, and send this message to the psock
+    #       of the ip_i and port_i you just got
+    #
+    #       At the very end of this loop include: print(f"[peer {state['name']}] sent SET-ID (id={i}) to {name_i}")
     
 
+    # 2. load the dataset and distribute records around the ring
+    filename = f"details-{year}.csv"
+    try:
+        with open(filename, newline="") as f:
+            reader = list(csv.reader(f))
+    except FileNotFoundError:
+        print(f"[peer {state['name']}] ERROR: cannot find {filename}")
+        return
+
+    #here are some useful things 
+    rows = reader[1:]             
+    l = len(rows)                     
+    s = nextprime(2 * l)              
+
+    #TODO
+    #rows is a list of lists
+    #here is what the first list looks like
+    #rows[0] == ['10096222', 'OKLAHOMA', '1950', 'April', 'Tornado', 'C', 'WASHITA', '0', '0', '0', '0', '250K', '0', 'F3']
+    #so if we wanted the eventid, we would do rows[0][0]
+    #since we want to work with one list at a time we could do this:
+
+    #for fields in rows:
+    # we set get the event id and save it in a var
+    # then from the project spec:
+    #
+    # "The first hash function computes a position, pos, as the event id field modulo the hash table size... 
+    # The second hash function is the position modulo the ring size n. pos = event id mod s, traget_id = pos mod n."
+    #
+    # increment state["counts"][target_id]
+    #
+    # 
+    #if target_id == 0:
+    #         state["table"][pos] = fields
+    # else:
+    #   this code is the same as the store branch in p2plistener
+    #
+
+    print(f"[peer {state['name']}] record distribution:")
+    for i in range(n):
+        print(f"    node {i}: {state['counts'][i]} records")
+
+    reply = messageManager(f"DHT-COMPLETE|{state['name']}")
+    print(f"[peer {state['name']}] dht-complete -> {reply}")
+
+
 def setup(args):
-    #setup has args n, year
+    #setup-dht has args n, year
     n = int(args[0])
     year = args[1]
 
@@ -173,47 +214,43 @@ def setup(args):
     print(f"[peer {state['name']}] setup-dht -> {reply}")
 
     if reply.startswith("SUCCESS"):
-        #parse tuples
         tuples = parseTuples(reply.split("|", 1)[1])
-        #build the dht
         buildDHT(tuples, n, year)
-    
 
 
 def main():
     if len(sys.argv) != 3:
-            sys.exit(1)
+        print("usage: python3 peer.py <manager-ip> <manager-port>")
+        sys.exit(1)
 
     state["address"] = (sys.argv[1], int(sys.argv[2]))
 
-    #parsing the cmds
     while True:
-         line = input("> ").strip()
-         if not line:
-              continue
+        try:
+            line = input("> ").strip()
+        except EOFError:
+            break
 
-         #ex 
-         #parts = ["register", "Sarah", "127.0.0.1", "6001", "6002"]
-         #cmd = "register"
-         #args = ["Sarah", "127.0.0.1", "6001", "6002"]
+        if not line:
+            continue
 
-         parts = line.split()
-         cmd =parts[0].lower()
-         args = parts[1:]
+        #ex: parts = ["register", "Sarah", "127.0.0.1", "6001", "6002"]
+        #cmd = "register", args = ["Sarah", "127.0.0.1", "6001", "6002"]
+        parts = line.split()
+        cmd = parts[0].lower()
+        args = parts[1:]
 
-         if cmd == "register":
+        if cmd == "register":
             register(args)
 
-         elif cmd == "setup-dht":
+        elif cmd == "setup-dht":
             setup(args)
 
-         elif cmd == "quit":
+        elif cmd == "quit":
             break
-         
-         else:
+
+        else:
             print(f"Unknown command: {cmd}")
-
-
 
 
 if __name__ == "__main__":
