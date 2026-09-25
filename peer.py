@@ -202,6 +202,7 @@ def buildDHT(tuples, n, year):
             l = len(rows)
             s = nextprime(2 * l)
 
+            entryrow = 0
             for rowindex in rows:
                 readeventid = int(reader[rowindex][DHeader.EVENT_ID])
                 calculatehash1 = readeventid % s
@@ -209,6 +210,10 @@ def buildDHT(tuples, n, year):
 
                 # Ex: With a list of 223 events, 5 peers, id is 2, the peer should store 45 entries
                 if calculatehash2 == state['id']:
+                    # Store the row locally within state["table"]
+                    state["table"][entryrow] = rowindex
+                    entryrow += 1
+
                     # Store the row on a local csv file to the peer
                     # The format of the written file name is "peer-{this-peer-id}-details-{storm-data-year}.csv"
                     locallist = rowindex
