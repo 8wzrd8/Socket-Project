@@ -161,21 +161,6 @@ def buildDHT(tuples, n, year):
     
 
     # 2. load the dataset and distribute records around the ring
-    filename = f"details-{year}.csv"
-    try:
-        with open(filename, newline="") as f:
-            reader = list(csv.reader(f))
-    except FileNotFoundError:
-        print(f"[peer {state['name']}] ERROR: cannot find {filename}")
-        return
-
-    #here are some useful things 
-    rows = reader[1:]
-    # l = len(rows) instead of len(rows) - 1 because rows already skips the header row
-    l = len(rows)
-    s = nextprime(2 * l)
-
-    #TODO
 
     #   0           1       2       3           4           5       6       7               8                   9               10              11              12              13
     #   event_id    state   year    month_name  event_type  cz_type cz_name injuries_direct injuries_indirect   deaths_direct   deaths_indirect damage_property damage_crops    tor_f_scale
@@ -185,26 +170,44 @@ def buildDHT(tuples, n, year):
     # id    =   pos mod n
     #       =   pos mod (≥3?)
 
-    neighborstr = ''
-    locallist = []
+    filename = f"details-{year}.csv"
+    peerdhtname = 'peer-' + str(state['id']) + '-' + str(filename)
 
-    for rowindex in rows:
-        readeventid = reader[rowindex][0]
-        calculatehash1 = readeventid % s
-        calculatehash2 = calculatehash1 % state['n']
+    try:
+        # Modified to open multiple files at the same time.
+        with open(filename, newline="") as f, open(peerdhtname, "w") as writestormfile:
+            reader = list(csv.reader(f))
+            writer = csv.writer(writestormfile)
 
-        if calculatehash2 == state['id']:
-            # Store the row locally
-            locallist = locallist + rowindex
-            locallist.append('\n')
-        else:
-            # Pass to the neighbor
-            # Unless the neighbor is the leader.
-            # By the time it reaches peer(n-1), that peer should not need to pass anything on.
+            #here are some useful things
+            rows = reader[1:]
+            # l = len(rows) instead of len(rows) - 1 because rows already skips the header row
+            l = len(rows)
+            s = nextprime(2 * l)
 
-    with open(peerdhtname, "w") as localstormcsv:
-        writer = csv.writer(localstormcsv)
-        writer.writerow(locallist)
+            for rowindex in rows:
+                readeventid = int(reader[rowindex][0])
+                calculatehash1 = readeventid % s
+                calculatehash2 = calculatehash1 % state['n']
+
+                # Ex: With a list of 223 events, 5 peers, id is 2, the peer should store 45 entries
+                if calculatehash2 == state['id']:
+                    # Store the row on a local csv file to the peer
+                    # The format of the written file name is "peer-{this-peer-id}-details-{storm-data-year}.csv"
+                    locallist = rowindex
+                    writer.writerow(locallist)
+                else:
+                    pass
+                    # Pass to the neighbor
+                    # Unless the neighbor is the leader.
+                    # By the time it reaches peer(n-1), that peer should not need to pass anything on.
+    except FileNotFoundError:
+        print(f"[peer {state['name']}] ERROR: cannot find {filename}")
+        return
+
+
+
+    #TODO
 
 
     #rows is a list of lists
