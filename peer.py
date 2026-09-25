@@ -186,6 +186,7 @@ def buildDHT(tuples, n, year):
     #       =   pos mod (≥3?)
 
     neighborstr = ''
+    locallist = []
 
     for rowindex in rows:
         readeventid = reader[rowindex][0]
@@ -194,12 +195,16 @@ def buildDHT(tuples, n, year):
 
         if calculatehash2 == state['id']:
             # Store the row locally
+            locallist = locallist + rowindex
+            locallist.append('\n')
         else:
             # Pass to the neighbor
             # Unless the neighbor is the leader.
             # By the time it reaches peer(n-1), that peer should not need to pass anything on.
 
-
+    with open(peerdhtname, "w") as localstormcsv:
+        writer = csv.writer(localstormcsv)
+        writer.writerow(locallist)
 
 
     #rows is a list of lists
