@@ -2,7 +2,24 @@ import socket
 import sys
 import threading
 import csv
+from enum import IntEnum
 from sympy import nextprime
+
+class DHeader(IntEnum):
+    EVENT_ID = 0
+    STATE = 1
+    YEAR = 2
+    MONTH_NAME = 3
+    EVENT_TYPE = 4
+    CZ_TYPE = 5
+    CZ_NAME = 6
+    INJURIES_DIRECT = 7
+    INJURIES_INDIRECT = 8
+    DEATHS_DIRECT = 9
+    DEATHS_INDIRECT = 10
+    DAMAGE_PROPERTY = 11
+    DAMAGE_CROPS = 12
+    TOR_F_SCALE = 13
 
 state = {
     "name": None,
@@ -186,7 +203,7 @@ def buildDHT(tuples, n, year):
             s = nextprime(2 * l)
 
             for rowindex in rows:
-                readeventid = int(reader[rowindex][0])
+                readeventid = int(reader[rowindex][DHeader.EVENT_ID])
                 calculatehash1 = readeventid % s
                 calculatehash2 = calculatehash1 % state['n']
 
