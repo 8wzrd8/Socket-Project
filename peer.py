@@ -152,7 +152,6 @@ def p2plistener():
 
 def buildDHT(tuples, n, year):
     # only the peer that issued setup-dht (the leader) runs this
-    state["tuples"] = tuples
     state["n"] = n
     state["id"] = 0
     state["leader"] = True
@@ -175,6 +174,13 @@ def buildDHT(tuples, n, year):
     #       of the ip_i and port_i you just got
     #
     #       At the very end of this loop include: print(f"[peer {state['name']}] sent SET-ID (id={i}) to {name_i}")
+    for i in range(1, n):
+        msgtuplelist = f"SET-ID|{i}|{n}|{tuplesString}"
+        # ipaddress is coded as (ipv4, port)
+        peerip = tuples[i % n][1]
+        peerport = tuples[i % n][2]
+        state["psock"].sendto(msgtuplelist.encode(), (peerip, peerport))
+
     
 
     # 2. load the dataset and distribute records around the ring
@@ -187,6 +193,8 @@ def buildDHT(tuples, n, year):
     # id    =   pos mod n
     #       =   pos mod (≥3?)
 
+    writetotable = True
+    writetofile = True
     filename = f"details-{year}.csv"
     peerdhtname = 'peer-' + str(state['id']) + '-' + str(filename)
 
@@ -211,13 +219,15 @@ def buildDHT(tuples, n, year):
                 # Ex: With a list of 223 events, 5 peers, id is 2, the peer should store 45 entries
                 if calculatehash2 == state['id']:
                     # Store the row locally within state["table"]
-                    state["table"][entryrow] = rowindex
-                    entryrow += 1
+                    if writetotable:
+                        state["table"][entryrow] = rowindex
+                        entryrow += 1
 
                     # Store the row on a local csv file to the peer
                     # The format of the written file name is "peer-{this-peer-id}-details-{storm-data-year}.csv"
-                    locallist = rowindex
-                    writer.writerow(locallist)
+                    if writetofile:
+                        locallist = rowindex
+                        writer.writerow(locallist)
                 else:
                     pass
                     # Pass to the neighbor
