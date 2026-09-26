@@ -2,7 +2,24 @@ import socket
 import sys
 import threading
 import csv
+from enum import IntEnum
 from sympy import nextprime
+
+class DHeader(IntEnum):
+    EVENT_ID = 0
+    STATE = 1
+    YEAR = 2
+    MONTH_NAME = 3
+    EVENT_TYPE = 4
+    CZ_TYPE = 5
+    CZ_NAME = 6
+    INJURIES_DIRECT = 7
+    INJURIES_INDIRECT = 8
+    DEATHS_DIRECT = 9
+    DEATHS_INDIRECT = 10
+    DAMAGE_PROPERTY = 11
+    DAMAGE_CROPS = 12
+    TOR_F_SCALE = 13
 
 state = {
     "name": None,
@@ -135,7 +152,6 @@ def p2plistener():
 
 def buildDHT(tuples, n, year):
     # only the peer that issued setup-dht (the leader) runs this
-    state["tuples"] = tuples
     state["n"] = n
     state["id"] = 0
     state["leader"] = True
@@ -158,23 +174,80 @@ def buildDHT(tuples, n, year):
     #       of the ip_i and port_i you just got
     #
     #       At the very end of this loop include: print(f"[peer {state['name']}] sent SET-ID (id={i}) to {name_i}")
+    for i in range(1, n):
+        msgtuplelist = f"SET-ID|{i}|{n}|{tuplesString}"
+        # ipaddress is coded as (ipv4, port)
+        peername = tuples[i][0]
+        peerip = tuples[i][1]
+        peerport = tuples[i][2]
+        state["psock"].sendto(msgtuplelist.encode(), (peerip, peerport))
+
+        print(f"[peer {state['name']}] sent SET-ID (id={i}) to {peername}")
     
 
     # 2. load the dataset and distribute records around the ring
+
+    #   0           1       2       3           4           5       6       7               8                   9               10              11              12              13
+    #   event_id    state   year    month_name  event_type  cz_type cz_name injuries_direct injuries_indirect   deaths_direct   deaths_indirect damage_property damage_crops    tor_f_scale
+
+    # pos   =   event_id mod s
+    #       =   event_id mod 449
+    # id    =   pos mod n
+    #       =   pos mod (≥3?)
+
+    writetotable = True
+    writetofile = False
     filename = f"details-{year}.csv"
+    peerdhtname = 'peer-' + str(state['id']) + '-' + str(filename)
+
     try:
+        # Modified to open multiple files at the same time.
+        # with open(filename, newline="") as f, open(peerdhtname, "w") as writestormfile:
         with open(filename, newline="") as f:
             reader = list(csv.reader(f))
+            # writer = csv.writer(writestormfile)
+
+            #here are some useful things
+            rows = reader[1:]
+            # l = len(rows) instead of len(rows) - 1 because rows already skips the header row
+            l = len(rows)
+            s = nextprime(2 * l)
+
+            for rowindex in rows:
+                readeventid = int(rowindex[DHeader.EVENT_ID])
+                calculatehash1 = readeventid % s
+                calculatehash2 = calculatehash1 % n # Determines the appropriate peer-id for this entry
+
+                # Ex: With a list of 223 events, 5 peers, id is 2, the peer should store 45 entries
+                # Calculate count ahead instead of needing peers to message their record size
+                state["counts"][calculatehash2] += 1
+                if calculatehash2 == state['id']:
+                    # Store the row locally within state["table"]
+                    if writetotable:
+                        state["table"][calculatehash1] = rowindex
+
+                    # Store the row on a local csv file to the peer
+                    # The format of the written file name is "peer-{this-peer-id}-details-{storm-data-year}.csv"
+                    if writetofile:
+                        locallist = rowindex
+                        # writer.writerow(locallist)
+                else:
+                    # Pass to the neighbor
+                    # Unless the neighbor is the leader.
+                    # By the time it reaches peer(n-1), that peer should not need to pass anything on.
+
+                    # Calculatehash2 already identifies the intended recipient
+                    # Pass it through a message to the neighbor
+                    send_store(calculatehash2, calculatehash1, rowindex)
     except FileNotFoundError:
         print(f"[peer {state['name']}] ERROR: cannot find {filename}")
         return
 
-    #here are some useful things 
-    rows = reader[1:]             
-    l = len(rows)                     
-    s = nextprime(2 * l)              
+
 
     #TODO
+
+
     #rows is a list of lists
     #here is what the first list looks like
     #rows[0] == ['10096222', 'OKLAHOMA', '1950', 'April', 'Tornado', 'C', 'WASHITA', '0', '0', '0', '0', '250K', '0', 'F3']
