@@ -202,9 +202,10 @@ def buildDHT(tuples, n, year):
 
     try:
         # Modified to open multiple files at the same time.
-        with open(filename, newline="") as f, open(peerdhtname, "w") as writestormfile:
+        # with open(filename, newline="") as f, open(peerdhtname, "w") as writestormfile:
+        with open(filename, newline="") as f:
             reader = list(csv.reader(f))
-            writer = csv.writer(writestormfile)
+            # writer = csv.writer(writestormfile)
 
             #here are some useful things
             rows = reader[1:]
@@ -229,14 +230,14 @@ def buildDHT(tuples, n, year):
                     # The format of the written file name is "peer-{this-peer-id}-details-{storm-data-year}.csv"
                     if writetofile:
                         locallist = rowindex
-                        writer.writerow(locallist)
+                        # writer.writerow(locallist)
                 else:
                     # Pass to the neighbor
                     # Unless the neighbor is the leader.
                     # By the time it reaches peer(n-1), that peer should not need to pass anything on.
-                    targetid = int(state['id'])
-                    targetid = (targetid + 1) % n
-                    targetid = str(int(state['id'] + 1))
+
+                    # Calculatehash2 already identifies the intended recipient
+                    # Pass it through a message to the neighbor
                     send_store(targetid, calculatehash1, rowindex)
     except FileNotFoundError:
         print(f"[peer {state['name']}] ERROR: cannot find {filename}")
