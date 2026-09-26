@@ -182,7 +182,7 @@ def buildDHT(tuples, n, year):
         peerport = tuples[i][2]
         state["psock"].sendto(msgtuplelist.encode(), (peerip, peerport))
 
-        print(f"[peer {state['name']}] sent SET-ID (id={i}) to {name_i}")
+        print(f"[peer {state['name']}] sent SET-ID (id={i}) to {peername}")
     
 
     # 2. load the dataset and distribute records around the ring
@@ -214,14 +214,14 @@ def buildDHT(tuples, n, year):
             s = nextprime(2 * l)
 
             for rowindex in rows:
-                readeventid = int(reader[rowindex][DHeader.EVENT_ID])
+                readeventid = int(rowindex[DHeader.EVENT_ID])
                 calculatehash1 = readeventid % s
                 calculatehash2 = calculatehash1 % n # Determines the appropriate peer-id for this entry
 
                 # Ex: With a list of 223 events, 5 peers, id is 2, the peer should store 45 entries
+                # Calculate count ahead instead of needing peers to message their record size
+                state["counts"][calculatehash2] += 1
                 if calculatehash2 == state['id']:
-                    # Calculate count ahead instead of needing peers to message their record size
-                    state["counts"][calculatehash2] += 1
                     # Store the row locally within state["table"]
                     if writetotable:
                         state["table"][calculatehash1] = rowindex
@@ -238,7 +238,7 @@ def buildDHT(tuples, n, year):
 
                     # Calculatehash2 already identifies the intended recipient
                     # Pass it through a message to the neighbor
-                    send_store(targetid, calculatehash1, rowindex)
+                    send_store(calculatehash2, calculatehash1, rowindex)
     except FileNotFoundError:
         print(f"[peer {state['name']}] ERROR: cannot find {filename}")
         return
