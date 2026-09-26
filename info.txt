@@ -5,20 +5,24 @@ needed to be changed (just general syntax so it could compile).
 Once you finish the code, you can test it by opening up a four 
 new terminals and running the following.
 
+Group 96
+[ (1000*96/2)+1000, (1000*96/2)+1499 ]
+[ 49000, 49499 ]
+
 #terminal 1
-python3 manager.py 15000
+python3 manager.py 49000
 
 #terminal 2
-python3 peer.py 127.0.0.1 15000
-> register Sarah 127.0.0.1 15001 15002
+python3 peer.py 127.0.0.1 49000
+> register Sarah 127.0.0.1 49001 49002
 
 #terminal 3
-python3 peer.py 127.0.0.1 15000
-> register Ali 127.0.0.1 15003 15004
+python3 peer.py 127.0.0.1 49000
+> register Ali 127.0.0.1 49003 49004
 
 #terminal 4
-python3 peer.py 127.0.0.1 15000
-> register Prateek 127.0.0.1 15005 15006
+python3 peer.py 127.0.0.1 49000
+> register Prateek 127.0.0.1 49005 49006
 
 #back in terminal2
 > setup-dht 3 1950
