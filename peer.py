@@ -212,18 +212,18 @@ def buildDHT(tuples, n, year):
             l = len(rows)
             s = nextprime(2 * l)
 
-            entryrow = 0
             for rowindex in rows:
                 readeventid = int(reader[rowindex][DHeader.EVENT_ID])
                 calculatehash1 = readeventid % s
-                calculatehash2 = calculatehash1 % state['n']
+                calculatehash2 = calculatehash1 % n # Determines the appropriate peer-id for this entry
 
                 # Ex: With a list of 223 events, 5 peers, id is 2, the peer should store 45 entries
                 if calculatehash2 == state['id']:
+                    # Calculate count ahead instead of needing peers to message their record size
+                    state["counts"][calculatehash2] += 1
                     # Store the row locally within state["table"]
                     if writetotable:
-                        state["table"][entryrow] = rowindex
-                        entryrow += 1
+                        state["table"][calculatehash1] = rowindex
 
                     # Store the row on a local csv file to the peer
                     # The format of the written file name is "peer-{this-peer-id}-details-{storm-data-year}.csv"
@@ -237,7 +237,7 @@ def buildDHT(tuples, n, year):
                     targetid = int(state['id'])
                     targetid = (targetid + 1) % n
                     targetid = str(int(state['id'] + 1))
-                    send_store(targetid, entryrow, rowindex)
+                    send_store(targetid, calculatehash1, rowindex)
     except FileNotFoundError:
         print(f"[peer {state['name']}] ERROR: cannot find {filename}")
         return
