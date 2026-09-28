@@ -14,20 +14,32 @@ python3 manager.py 49000
 
 #terminal 2
 python3 peer.py 127.0.0.1 49000
-> register Sarah 127.0.0.1 49001 49002
+> register Javier 127.0.0.1 49001 49002
 
 #terminal 3
 python3 peer.py 127.0.0.1 49000
-> register Ali 127.0.0.1 49003 49004
+> register Sarah 127.0.0.1 49003 49004
 
 #terminal 4
 python3 peer.py 127.0.0.1 49000
 > register Prateek 127.0.0.1 49005 49006
 
-#back in terminal2
+#terminal 5
+python3 peer.py 127.0.0.1 49000
+> register Guoliang 127.0.0.1 49007 49008
+
+#terminal 6
+python3 peer.py 127.0.0.1 49000
+> register Matthew 127.0.0.1 49009 49010
+
+#back in terminal 2
 > setup-dht 3 1950
 
-Also, you might need to install the library, run this: 
+Also, you might need to install the library, run this using the requirements.txt included:
+
+pip install -r requirements.txt
+
+Otherwise, install libraries manually like this:
 
 pip install sympy
 
