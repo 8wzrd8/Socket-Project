@@ -76,6 +76,28 @@ def complete(dht, name):
     return "SUCCESS"
 
 
+def query(peers, dht, name):
+    # Failure conditions:
+    # 1. DHT not complete
+    # 2. name is not registered a peer
+    # 3. peer is within InDHT
+    querysuccess = False
+    # Condition 1
+    if not dht["exists"] or not dht["building"]:
+        return "FAILURE"
+    for index in peers:
+        # Condition 2
+        if index == name:
+            # Condition 3
+            if index["state"] == "Free":
+                querysuccess = True
+    if querysuccess:
+        # Send 3-tuple of peer name, peer IPv4, peer pport
+        # Format of message is SUCCESS|<peer name>|<peer IPv4>|<peer pport>
+        randompeer = random.sample(dht["members"], 1)
+        return f"SUCCESS|{randompeer},{randompeer['ip'],{randompeer['pport']}}"
+    return "FAILURE"
+
 def main():
 
     if len(sys.argv) != 2:
@@ -124,6 +146,11 @@ def main():
         elif cmd == "DHT-COMPLETE":
             name = parts[1]
             reply = complete(dht, name)
+
+        elif cmd == "QUERY-DHT":
+            # name is the identity of the peer making this request
+            name = parts[1]
+            reply = query(peers, dht, name)
 
         else:
             reply = "FAILURE"
