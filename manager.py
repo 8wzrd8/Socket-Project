@@ -82,20 +82,33 @@ def query(peers, dht, name):
     # 2. name is not registered a peer
     # 3. peer is within InDHT
     querysuccess = False
+    peerfound = False
     # Condition 1
-    if not dht["exists"] or not dht["building"]:
+    if not dht["exists"] or dht["building"]:
+        if not dht["exists"]:
+            print("DHT does not exist")
+        if dht["building"]:
+            print("DHT is being built")
         return "FAILURE"
     for index in peers:
         # Condition 2
         if index == name:
             # Condition 3
-            if index["state"] == "Free":
+            peerfound = True
+            if peers[index]["state"] == "Free":
                 querysuccess = True
     if querysuccess:
         # Send 3-tuple of peer name, peer IPv4, peer pport
         # Format of message is SUCCESS|<peer name>|<peer IPv4>|<peer pport>
-        randompeer = random.sample(dht["members"], 1)
-        return f"SUCCESS|{randompeer},{randompeer['ip'],{randompeer['pport']}}"
+        randompeer = (random.sample(dht["members"], 1))[0]
+        print(f"{randompeer}")
+        print(f"{peers[randompeer]['ip']}")
+        print(f"{peers[randompeer]['pport']}")
+        return f"SUCCESS|{randompeer}|{peers[randompeer]['ip']}|{peers[randompeer]['pport']}"
+    if peerfound:
+        print("Peer is not Free")
+    else:
+        print("Peer not found")
     return "FAILURE"
 
 def main():

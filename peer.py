@@ -290,6 +290,13 @@ def setup(args):
         tuples = parseTuples(reply.split("|", 1)[1])
         buildDHT(tuples, n, year)
 
+def sendquery(args):
+    # query-dht only sends <peer name>
+    name = args[0]
+
+    reply = messageManager(f"QUERY-DHT|{name}")
+    print(f"[peer {state['name']}] query-dht -> {reply}")
+
 
 def main():
     if len(sys.argv) != 3:
@@ -318,6 +325,9 @@ def main():
 
         elif cmd == "setup-dht":
             setup(args)
+
+        elif cmd == "query-dht":
+            sendquery(args)
 
         elif cmd == "quit":
             break
