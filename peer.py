@@ -23,16 +23,17 @@ class DHeader(IntEnum):
 
 state = {
     "name": None,
-    "msock": None,      
-    "psock": None,      
-    "address": None,    
-    "id": None,       
-    "n": None,         
-    "neighbor": None,    
-    "table": {},         
-    "tuples": [],       
+    "msock": None,
+    "psock": None,
+    "address": None,
+    "id": None,
+    "n": None,
+    "s": None,
+    "neighbor": None,
+    "table": {},
+    "tuples": [],
     "leader": False,
-    "counts": {},        
+    "counts": {},
 }
 
 
@@ -79,7 +80,7 @@ def register(args):
     state["psock"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     state["psock"].bind(("", pport))
 
-    #start listeing for peere to peer messages 
+    #start listeing for peere to peer messages
     threading.Thread(target=p2plistener, daemon=True).start()
 
     reply = messageManager(f"REGISTER|{name}|{ip}|{mport}|{pport}")
@@ -108,6 +109,10 @@ def p2p_setid(idn, ringn, tuples_str):
 
     print(f"[peer {state['name']}] got SET-ID: id={idn} n={ringn} "
           f"neighbor={state['neighbor'][0]}")
+
+
+def p2p_setdhtsize(size_prime_num):
+    state["s"] = size_prime_num
 
 
 def p2p_store(target_id, pos, fields):
@@ -139,12 +144,21 @@ def p2plistener():
 
             p2p_setid(idn, ringn, tuples_str)
 
+        elif cmd == "SET-DHT-SIZE":
+            s = int(parts[1])
+
+            p2p_setdhtsize(s)
+
         elif cmd == "STORE":
             target_id = int(parts[1])
             pos = int(parts[2])
             fields = parts[3].split(",")
             
             p2p_store(target_id, pos, fields)
+
+        elif cmd == "FIND-QUERY":
+            #TODO
+            print("todo")
 
         else:
             print(f"[peer {state['name']}] unknown p2p message: {msg}")
@@ -212,6 +226,14 @@ def buildDHT(tuples, n, year):
             # l = len(rows) instead of len(rows) - 1 because rows already skips the header row
             l = len(rows)
             s = nextprime(2 * l)
+
+            # Store term s at every peer for query-dht utility
+            state["s"] = s
+            msgstores = f"SET-DHT-SIZE|{s}"
+            neighborname, neighborip, neighborport = state["neighbor"]
+            # tuple state["neighbor"]
+            state["psock"].sendto(msgstores.encode(), (neighborip, neighborport))
+            print(f"[peer {state['name']}] sent SET-DHT-SIZE ({s}) to {neighborname}")
 
             for rowindex in rows:
                 readeventid = int(rowindex[DHeader.EVENT_ID])
@@ -290,12 +312,36 @@ def setup(args):
         tuples = parseTuples(reply.split("|", 1)[1])
         buildDHT(tuples, n, year)
 
+
+def findevent(args):
+    # find-event has args event_id, list_og_sender_addr, list_seq_id
+    event_id = args[0]
+    request_addr_ip = args[1][0]
+    request_addr_pport = args[1][1]
+    list_seq_id = args[2]
+
+    s = int(state['n'])
+    n = int(state['n'])
+
+    calculatehash1 = readeventid % s #TODO
+    calculatehash2 = calculatehash1 % n
+
+
 def sendquery(args):
     # query-dht only sends <peer name>
     name = args[0]
 
-    reply = messageManager(f"QUERY-DHT|{name}")
-    print(f"[peer {state['name']}] query-dht -> {reply}")
+    if state['name'] == name:
+        reply = messageManager(f"QUERY-DHT|{name}")
+        print(f"[peer {state['name']}] query-dht -> {reply}")
+
+        if reply.startswith("SUCCESS"):
+            tuples = parseTuples(reply.split("|", 1)[1])
+            # Store at "neighbor"
+            state["neighbor"] = tuples
+    else:
+        print("Try again with the given peer name.")
+        print(f"State Name: {state['name']} != args: {name}")
 
 
 def main():

@@ -84,11 +84,9 @@ def query(peers, dht, name):
     querysuccess = False
     peerfound = False
     # Condition 1
-    if not dht["exists"] or dht["building"]:
-        if not dht["exists"]:
-            print("DHT does not exist")
-        if dht["building"]:
-            print("DHT is being built")
+    if not dht["exists"]:
+        # dht["building"] is checked in the main loop
+        print("DHT does not exist")
         return "FAILURE"
     for index in peers:
         # Condition 2
@@ -99,16 +97,15 @@ def query(peers, dht, name):
                 querysuccess = True
     if querysuccess:
         # Send 3-tuple of peer name, peer IPv4, peer pport
-        # Format of message is SUCCESS|<peer name>|<peer IPv4>|<peer pport>
+        # Format of message is SUCCESS|<peer name>,<peer IPv4>,<peer pport>
         randompeer = (random.sample(dht["members"], 1))[0]
-        print(f"{randompeer}")
-        print(f"{peers[randompeer]['ip']}")
-        print(f"{peers[randompeer]['pport']}")
-        return f"SUCCESS|{randompeer}|{peers[randompeer]['ip']}|{peers[randompeer]['pport']}"
+        print(f"Successfully sent information of [peer {randompeer}]")
+        # Use peer list
+        return f"SUCCESS|{randompeer},{peers[randompeer]['ip']},{peers[randompeer]['pport']}"
     if peerfound:
         print("Peer is not Free")
     else:
-        print("Peer not found")
+        print("Peer is not registered")
     return "FAILURE"
 
 def main():
@@ -136,7 +133,6 @@ def main():
 
         parts = msg.split("|")
         cmd = parts[0].upper()
-
         
         if dht["building"] and cmd != "DHT-COMPLETE":
             reply = "FAILURE"
@@ -158,16 +154,17 @@ def main():
 
         elif cmd == "DHT-COMPLETE":
             name = parts[1]
+
             reply = complete(dht, name)
 
         elif cmd == "QUERY-DHT":
             # name is the identity of the peer making this request
             name = parts[1]
+
             reply = query(peers, dht, name)
 
         else:
             reply = "FAILURE"
-
 
         print(f"[manager] send to {addr}: {reply}")
         sock.sendto(reply.encode(), addr)
