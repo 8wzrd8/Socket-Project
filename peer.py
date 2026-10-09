@@ -73,6 +73,8 @@ def register(args):
     mport = int(args[2])
     pport = int(args[3])
     state["name"] = name
+    state["ip"] = ip
+    state["pport"] = pport
 
     state["msock"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     state["msock"].bind(("", mport))
@@ -343,6 +345,46 @@ def sendquery(args):
         print("Try again with the given peer name.")
         print(f"State Name: {state['name']} != args: {name}")
 
+def leave_dht(args):
+    #msg format
+    reply = messageManager(f"LEAVE-DHT|{state['name']}")
+    print(f"[peer {state['name']}] leave-dht -> {reply}")
+    
+    if reply == "SUCCESS":
+        msg = f"TEARDOWN|{state['name']}|LEAVE"
+        _, ip, pport = state["neighbor"]
+        state["psock"].sendto(msg.encode(), (ip, pport))
+ 
+def join_dht(args):
+    #msg format
+    reply = messageManager(f"JOIN-DHT|{state['name']}")
+    print(f"[peer {state['name']}] join-dht -> {reply}")
+ 
+    if not reply.startswith("SUCCESS"):
+        return
+    
+    leader_name, leader_ip, leader_pport = reply.split("|", 1)[1].split(",")
+ 
+    msg = f"JOIN-REQUEST|{state['name']},{state['ip']},{state['pport']}"
+    state["psock"].sendto(msg.encode(), (leader_ip, int(leader_pport)))
+ 
+def teardown_dht(args):
+    #msg format
+    reply = messageManager(f"TEARDOWN-DHT|{state['name']}")
+    print(f"[peer {state['name']}] teardown-dht -> {reply}")
+ 
+    if reply == "SUCCESS":
+        msg = f"TEARDOWN|{state['name']}|FULL"
+        _, ip, pport = state["neighbor"]
+        state["psock"].sendto(msg.encode(), (ip, pport))
+ 
+def deregister_cmd(args):
+    #msg format
+    reply = messageManager(f"DEREGISTER|{state['name']}")
+    print(f"[peer {state['name']}] deregister -> {reply}")
+ 
+    if reply == "SUCCESS":
+        sys.exit(0)
 
 def main():
     if len(sys.argv) != 3:
@@ -375,6 +417,18 @@ def main():
         elif cmd == "query-dht":
             sendquery(args)
 
+        elif cmd == "leave-dht":
+            leave_dht(args)
+ 
+        elif cmd == "join-dht":
+            join_dht(args)
+ 
+        elif cmd == "teardown-dht":
+            teardown_dht(args)
+ 
+        elif cmd == "deregister":
+            deregister_cmd(args)
+            
         elif cmd == "quit":
             break
 
