@@ -128,6 +128,62 @@ def p2p_store(target_id, pos, fields):
     else:
         send_store(target_id, pos, fields)
 
+def p2p_reset_id(new_id, new_n, initiator, tuples_str):
+    initiator_name, initiator_ip, initiator_pport = initiator
+ 
+    if state["name"] == initiator_name:
+        #the lap has come all the way back around 
+        new_tuples = parseTuples(tuples_str)
+        finish_leave(new_tuples[0][0])
+        return
+ 
+    state["id"] = new_id
+    state["n"] = new_n
+    state["leader"] = (new_id == 0)
+    new_tuples = parseTuples(tuples_str)
+    state["tuples"] = new_tuples
+ 
+    print(f"[peer {state['name']}] got RESET-ID: id={new_id} n={new_n}")
+ 
+    if new_id == new_n - 1:
+        #last member of the new ring: our real neighbor going forward is
+        #the new leader, but THIS message needs to close the loop by going
+        #directly back to whoever started the leave, not around the ring
+        state["neighbor"] = new_tuples[0]
+        next_ip, next_pport = initiator_ip, initiator_pport
+    else:
+        state["neighbor"] = new_tuples[(new_id + 1) % new_n]
+        next_ip, next_pport = state["neighbor"][1], state["neighbor"][2]
+ 
+    msg = f"RESET-ID|{new_id + 1}|{new_n}|{initiator_name},{initiator_ip},{initiator_pport}|{tuples_str}"
+    state["psock"].sendto(msg.encode(), (next_ip, next_pport))
+
+
+def p2p_join_request(joiner_name, joiner_ip, joiner_pport):
+    #only ever received by whoever is currently the leader
+    old_n = state["n"]
+    new_n = old_n + 1
+    new_tuples = state["tuples"] + [(joiner_name, joiner_ip, joiner_pport)]
+    tuples_str = serializeTuples(new_tuples)
+ 
+    #tell the new peer its id 
+    msg = f"SET-ID|{new_n - 1}|{new_n}|{state['s']}|{tuples_str}"
+    state["psock"].sendto(msg.encode(), (joiner_ip, joiner_pport))
+ 
+    #the old last peers right neighbor is now the joiner 
+    #resend it a setid so it recomputes that
+    old_last_name, old_last_ip, old_last_pport = state["tuples"][old_n - 1]
+    msg = f"SET-ID|{old_n - 1}|{new_n}|{state['s']}|{tuples_str}"
+    state["psock"].sendto(msg.encode(), (old_last_ip, old_last_pport))
+ 
+    #our own id/neighbor are unaffected 
+    state["n"] = new_n
+    state["tuples"] = new_tuples
+ 
+    print(f"[peer {state['name']}] {joiner_name} joined as id={new_n - 1}; "f"ring size now {new_n}")
+    reply = messageManager(f"DHT-REBUILT|{joiner_name}|{state['name']}")
+    print(f"[peer {state['name']}] dht-rebuilt -> {reply}")
+
 
 def p2plistener():
     #Intended for a future shutdown protocol
@@ -158,9 +214,55 @@ def p2plistener():
             
             p2p_store(target_id, pos, fields)
 
-        elif cmd == "FIND-QUERY":
+        elif cmd == "FIND-EVENT":
+            event_id = int(parts[1])
+            req_name, req_ip, req_pport = parts[2].split(",")
+            requester = (req_name, req_ip, int(req_pport))
+            visited_csv = ""
+            if len(parts) > 3:
+                visited_csv = parts[3]
+
+            visited = []
+            if visited_csv:
+                for v in visited_csv.split(","):
+                    visited.append(int(v))
+
             #TODO
-            print("todo")
+            #p2p_find_event(event_id, requester, visited)
+                
+        elif cmd == "FIND-RESULT":
+            #TODO
+            status = parts[1]
+            id_seq = parts[2]
+ 
+            if status == "SUCCESS":
+                fields = parts[3].split(",")
+                state["query_result"] = ("SUCCESS", id_seq, fields)
+            else:
+                state["query_result"] = ("FAILURE", id_seq, parts[3])
+ 
+            state["query_event"].set()
+
+        elif cmd == "TEARDOWN":
+            initiator_name = parts[1]
+            mode = parts[2]
+
+            #TODO
+            #p2p_teardown(initiator_name, mode)
+
+        elif cmd == "RESET-ID":
+            new_id = int(parts[1])
+            new_n = int(parts[2])
+            init_name, init_ip, init_pport = parts[3].split(",")
+            initiator = (init_name, init_ip, int(init_pport))
+            tuples_str = parts[4]
+
+            p2p_reset_id(new_id, new_n, initiator, tuples_str)
+
+        elif cmd == "JOIN-REQUEST":
+            joiner_name, joiner_ip, joiner_pport = parts[1].split(",")
+
+            p2p_join_request(joiner_name, joiner_ip, int(joiner_pport))
 
         else:
             print(f"[peer {state['name']}] unknown p2p message: {msg}")
