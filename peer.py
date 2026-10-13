@@ -184,6 +184,79 @@ def p2p_join_request(joiner_name, joiner_ip, joiner_pport):
     reply = messageManager(f"DHT-REBUILT|{joiner_name}|{state['name']}")
     print(f"[peer {state['name']}] dht-rebuilt -> {reply}")
 
+def p2p_teardown(initiator_name, mode):
+    #generic teardown
+    state["table"] = {}
+    print(f"[peer {state['name']}] cleared local table (teardown)")
+ 
+    if state["name"] == initiator_name:
+        if mode == "FULL":
+            reply = messageManager(f"TEARDOWN-COMPLETE|{state['name']}")
+            print(f"[peer {state['name']}] teardown-complete -> {reply}")
+            
+        else:
+                old_tuples = state["tuples"]
+                my_id = state["id"]
+                n = state["n"]
+             
+                new_tuples = []
+                for k in range(1, n):
+                    new_tuples.append(old_tuples[(my_id + k) % n])
+             
+                new_n = n - 1
+                tuples_str = serializeTuples(new_tuples)
+             
+                #our old right neighbor becomes id=0
+                msg = f"RESET-ID|0|{new_n}|{state['name']},{state['ip']},{state['pport']}|{tuples_str}"
+                _, ip, pport = state["neighbor"]
+                state["psock"].sendto(msg.encode(), (ip, pport))
+        return
+ 
+    msg = f"TEARDOWN|{initiator_name}|{mode}"
+    _, ip, pport = state["neighbor"]
+    state["psock"].sendto(msg.encode(), (ip, pport))
+
+def p2p_find_event(event_id, requester, visited):
+    #hot potato, every node that handles this message gets
+    #appended to visited (the id-seq trace), regardless of whether it
+    #turns out to be the owner or just another random hop along the way
+    visited = visited + [state["id"]]
+    visited_csv = ",".join(str(v) for v in visited)
+ 
+    req_name, req_ip, req_pport = requester
+    
+    pos = event_id % state["s"]
+    target_id = pos % state["n"]
+ 
+    if target_id == state["id"]:
+        #the node responsible for this pos
+        #reply back to whoever originally asked
+        fields = state["table"].get(pos)
+        #gotta love python
+        if fields is not None and int(fields[DHeader.EVENT_ID]) == event_id:
+            record_csv = ",".join(fields)
+            msg = f"FIND-RESULT|SUCCESS|{visited_csv}|{record_csv}"
+        else:
+            msg = f"FIND-RESULT|FAILURE|{visited_csv}|{event_id}"
+ 
+        state["psock"].sendto(msg.encode(), (req_ip, req_pport))
+        return
+ 
+    #if we made it here then its not us, bounce to a random node we havent probed yet
+    unvisited = [i for i in range(state["n"]) if i not in visited]
+    if unvisited:
+        next_id = random.choice(unvisited)
+    else:
+        #cant happen (the owner is always reachable within n hops)
+        #but fall back to addressing the owner directly rather than deadlock
+        next_id = target_id
+ 
+    next_name, next_ip, next_pport = state["tuples"][next_id]
+    msg = f"FIND-EVENT|{event_id}|{req_name},{req_ip},{req_pport}|{visited_csv}"
+    state["psock"].sendto(msg.encode(), (next_ip, next_pport))
+    print(f"[peer {state['name']}] forwarding find-event for {event_id} "
+          f"to {next_name} (id={next_id})")
+
 
 def p2plistener():
     #Intended for a future shutdown protocol
@@ -227,8 +300,7 @@ def p2plistener():
                 for v in visited_csv.split(","):
                     visited.append(int(v))
 
-            #TODO
-            #p2p_find_event(event_id, requester, visited)
+            p2p_find_event(event_id, requester, visited)
                 
         elif cmd == "FIND-RESULT":
             #TODO
@@ -247,8 +319,7 @@ def p2plistener():
             initiator_name = parts[1]
             mode = parts[2]
 
-            #TODO
-            #p2p_teardown(initiator_name, mode)
+            p2p_teardown(initiator_name, mode)
 
         elif cmd == "RESET-ID":
             new_id = int(parts[1])
