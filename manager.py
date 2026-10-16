@@ -237,6 +237,12 @@ def main():
         if dht["building"] and cmd != "DHT-COMPLETE":
             reply = "FAILURE"
 
+        elif dht["rebuilding"] and cmd != "DHT-REBUILT":
+            reply = "FAILURE"
+ 
+        elif dht["tearing_down"] and cmd != "TEARDOWN-COMPLETE":
+            reply = "FAILURE"
+
         elif cmd == "REGISTER":
             name = parts[1]
             ip = parts[2]
