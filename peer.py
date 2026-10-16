@@ -189,6 +189,13 @@ def p2p_join_request(joiner_name, joiner_ip, joiner_pport):
     new_n = old_n + 1
     new_tuples = state["tuples"] + [(joiner_name, joiner_ip, joiner_pport)]
     tuples_str = serializeTuples(new_tuples)
+
+    for i in range(old_n):
+        name_i, ip_i, port_i = state["tuples"][i]
+        if name_i == state["name"]:
+            continue
+        msg = f"SET-ID|{i}|{new_n}|{tuples_str}"
+        state["psock"].sendto(msg.encode(), (ip_i, port_i))
  
     #tell the new peer its id 
     msg = f"SET-ID|{new_n - 1}|{new_n}|{state['s']}|{tuples_str}"
@@ -196,11 +203,6 @@ def p2p_join_request(joiner_name, joiner_ip, joiner_pport):
  
     msg = f"SET-DHT-SIZE|{state['s']}"
     state["psock"].sendto(msg.encode(), (joiner_ip, joiner_pport))
- 
-    #the old last peers right neighbor is now the joiner
-    old_last_name, old_last_ip, old_last_pport = state["tuples"][old_n - 1]
-    msg = f"SET-ID|{old_n - 1}|{new_n}|{tuples_str}"
-    state["psock"].sendto(msg.encode(), (old_last_ip, old_last_pport))
  
     #our own id/neighbor are unaffected 
     state["n"] = new_n
