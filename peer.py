@@ -2,6 +2,7 @@ import socket
 import sys
 import threading
 import csv
+import random
 from enum import IntEnum
 from sympy import nextprime
 
@@ -34,6 +35,8 @@ state = {
     "tuples": [],
     "leader": False,
     "counts": {},
+    "query_event": threading.Event(),
+    "query_result": None,
 }
 
 
@@ -116,6 +119,14 @@ def p2p_setid(idn, ringn, tuples_str):
 def p2p_setdhtsize(size_prime_num):
     state["s"] = size_prime_num
 
+    if state["id"] == 0:
+        return
+ 
+    msg = f"SET-DHT-SIZE|{size_prime_num}"
+    _, ip, pport = state["neighbor"]
+    state["psock"].sendto(msg.encode(), (ip, pport))
+
+
 
 def p2p_store(target_id, pos, fields):
     #"A storm-event record is being routed around the ring toward whichever
@@ -127,6 +138,19 @@ def p2p_store(target_id, pos, fields):
               f"event_id={fields[0]} at pos={pos}")
     else:
         send_store(target_id, pos, fields)
+
+def finish_leave(new_leader_name):
+    reply = messageManager(f"DHT-REBUILT|{state['name']}|{new_leader_name}")
+    print(f"[peer {state['name']}] dht-rebuilt -> {reply}")
+ 
+    #we've left the dht reset back to a plain outside-observer peer
+    state["leader"] = False
+    state["id"] = None
+    state["n"] = None
+    state["s"] = None
+    state["neighbor"] = None
+    state["tuples"] = []
+    state["table"] = {}
 
 def p2p_reset_id(new_id, new_n, initiator, tuples_str):
     initiator_name, initiator_ip, initiator_pport = initiator
@@ -170,10 +194,12 @@ def p2p_join_request(joiner_name, joiner_ip, joiner_pport):
     msg = f"SET-ID|{new_n - 1}|{new_n}|{state['s']}|{tuples_str}"
     state["psock"].sendto(msg.encode(), (joiner_ip, joiner_pport))
  
-    #the old last peers right neighbor is now the joiner 
-    #resend it a setid so it recomputes that
+    msg = f"SET-DHT-SIZE|{state['s']}"
+    state["psock"].sendto(msg.encode(), (joiner_ip, joiner_pport))
+ 
+    #the old last peers right neighbor is now the joiner
     old_last_name, old_last_ip, old_last_pport = state["tuples"][old_n - 1]
-    msg = f"SET-ID|{old_n - 1}|{new_n}|{state['s']}|{tuples_str}"
+    msg = f"SET-ID|{old_n - 1}|{new_n}|{tuples_str}"
     state["psock"].sendto(msg.encode(), (old_last_ip, old_last_pport))
  
     #our own id/neighbor are unaffected 
@@ -183,6 +209,7 @@ def p2p_join_request(joiner_name, joiner_ip, joiner_pport):
     print(f"[peer {state['name']}] {joiner_name} joined as id={new_n - 1}; "f"ring size now {new_n}")
     reply = messageManager(f"DHT-REBUILT|{joiner_name}|{state['name']}")
     print(f"[peer {state['name']}] dht-rebuilt -> {reply}")
+
 
 def p2p_teardown(initiator_name, mode):
     #generic teardown
@@ -344,6 +371,7 @@ def buildDHT(tuples, n, year):
     state["n"] = n
     state["id"] = 0
     state["leader"] = True
+    state["tuples"] = tuples
     state["neighbor"] = tuples[1 % n]
     state["counts"] = {i: 0 for i in range(n)}
 
@@ -503,20 +531,40 @@ def findevent(args):
 
 
 def sendquery(args):
-    # query-dht only sends <peer name>
-    name = args[0]
-
-    if state['name'] == name:
-        reply = messageManager(f"QUERY-DHT|{name}")
-        print(f"[peer {state['name']}] query-dht -> {reply}")
-
-        if reply.startswith("SUCCESS"):
-            tuples = parseTuples(reply.split("|", 1)[1])
-            # Store at "neighbor"
-            state["neighbor"] = tuples
+    #query-dht has args event_id
+    event_id = int(args[0])
+ 
+    reply = messageManager(f"QUERY-DHT|{state['name']}")
+    print(f"[peer {state['name']}] query-dht -> {reply}")
+ 
+    if not reply.startswith("SUCCESS"):
+        return
+ 
+    target_name, target_ip, target_pport = reply.split("|", 1)[1].split(",")
+    target_pport = int(target_pport)
+ 
+    state["query_event"].clear()
+    state["query_result"] = None
+ 
+    #kick off the hot-potato find-event walk at the random member the manager pointed us to
+    msg = f"FIND-EVENT|{event_id}|{state['name']},{state['ip']},{state['pport']}|"
+    state["psock"].sendto(msg.encode(), (target_ip, target_pport))
+ 
+    got_result = state["query_event"].wait(timeout=10)
+    if not got_result:
+        print(f"[peer {state['name']}] query timed out waiting for a response")
+        return
+ 
+    status, id_seq, payload = state["query_result"]
+    if status == "SUCCESS":
+        fields = payload
+        print(f"[peer {state['name']}] record found:")
+        for member in DHeader:
+            print(f"    {member.name}: {fields[member.value]}")
+        print(f"[peer {state['name']}] id-seq: {id_seq}")
     else:
-        print("Try again with the given peer name.")
-        print(f"State Name: {state['name']} != args: {name}")
+        print(f"Storm event {event_id} not found in the DHT.")
+
 
 def leave_dht(args):
     #msg format
