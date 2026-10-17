@@ -108,6 +108,97 @@ def query(peers, dht, name):
         print("Peer is not registered")
     return "FAILURE"
 
+def leave(peers, dht, name):
+    #has to be an actual member of the dht that's leaving
+    if not dht["exists"] or name not in dht["members"]:
+        return "FAILURE"
+ 
+    #stash who's leaving
+    dht["rebuilding"] = True
+    dht["pending_peer"] = name
+    dht["pending_op"] = "leave"
+
+    return "SUCCESS"
+
+def join(peers, dht, name):
+    #has to be a free peer asking to join an existing dht
+    if not dht["exists"] or name not in peers or peers[name]["state"] != "Free":
+        return "FAILURE"
+ 
+    dht["rebuilding"] = True
+    dht["pending_peer"] = name
+    dht["pending_op"] = "join"
+ 
+    #give the joiner the current leaders tuple so it knows who to contact
+    leader = dht["leader"]
+    return f"SUCCESS|{leader},{peers[leader]['ip']},{peers[leader]['pport']}"
+ 
+def rebuilt(peers, dht, name, new_leader):
+    #has to match whichever peer actually kicked off the leave/join
+    if not dht["rebuilding"] or name != dht["pending_peer"]:
+        return "FAILURE"
+ 
+    if dht["pending_op"] == "leave":
+        dht["members"].remove(name)
+        peers[name]["state"] = "Free"
+    else:
+        dht["members"].append(name)
+        peers[name]["state"] = "InDHT"
+ 
+    if new_leader not in dht["members"]:
+        return "FAILURE"
+ 
+    #set states accordingly whoevers the new leader gets promoted
+    #everyone else surviving in the ring is just InDHT
+    for m in dht["members"]:
+        peers[m]["state"] = "Leader" if m == new_leader else "InDHT"
+ 
+    dht["leader"] = new_leader
+    dht["rebuilding"] = False
+    dht["pending_peer"] = None
+    dht["pending_op"] = None
+ 
+    return "SUCCESS"
+ 
+ 
+def deregister(peers, name):
+    #cant deregister while actively in the dht
+    if name not in peers or peers[name]["state"] == "InDHT":
+        return "FAILURE"
+ 
+    del peers[name]
+
+    return "SUCCESS"
+ 
+ 
+def teardown(dht, name):
+    #only the leader can tear down the dht
+    if not dht["exists"] or name != dht["leader"]:
+        return "FAILURE"
+ 
+    dht["tearing_down"] = True
+    return "SUCCESS"
+ 
+ 
+def teardown_complete(peers, dht, name):
+    if not dht["tearing_down"] or name != dht["leader"]:
+        return "FAILURE"
+ 
+    #everyone who was in the dht goes back to being free
+    for m in dht["members"]:
+        peers[m]["state"] = "Free"
+ 
+    dht["exists"] = False
+    dht["building"] = False
+    dht["rebuilding"] = False
+    dht["tearing_down"] = False
+    dht["leader"] = None
+    dht["members"] = []
+    dht["pending_peer"] = None
+    dht["pending_op"] = None
+ 
+    return "SUCCESS"
+
 def main():
 
     if len(sys.argv) != 2:
@@ -118,7 +209,16 @@ def main():
     sock.bind(("", port))
 
     peers = {}
-    dht = {"exists": False, "building": False, "leader": None, "members": []}
+    dht = {
+        "exists": False,
+        "building": False,
+        "rebuilding": False,
+        "tearing_down": False,
+        "leader": None,
+        "members": [],
+        "pending_peer": None,
+        "pending_op": None,
+    }
 
     print(f"[manager] listening on port {port}")
 
@@ -135,6 +235,12 @@ def main():
         cmd = parts[0].upper()
         
         if dht["building"] and cmd != "DHT-COMPLETE":
+            reply = "FAILURE"
+
+        elif dht["rebuilding"] and cmd != "DHT-REBUILT":
+            reply = "FAILURE"
+ 
+        elif dht["tearing_down"] and cmd != "TEARDOWN-COMPLETE":
             reply = "FAILURE"
 
         elif cmd == "REGISTER":
@@ -158,11 +264,41 @@ def main():
             reply = complete(dht, name)
 
         elif cmd == "QUERY-DHT":
-            # name is the identity of the peer making this request
+            name = parts[1]
+            
+            reply = query(peers, dht, name)
+ 
+        elif cmd == "LEAVE-DHT":
             name = parts[1]
 
-            reply = query(peers, dht, name)
+            reply = leave(peers, dht, name)
+ 
+        elif cmd == "JOIN-DHT":
+            name = parts[1]
 
+            reply = join(peers, dht, name)
+ 
+        elif cmd == "DHT-REBUILT":
+            name = parts[1]
+            new_leader = parts[2]
+
+            reply = rebuilt(peers, dht, name, new_leader)
+ 
+        elif cmd == "DEREGISTER":
+            name = parts[1]
+
+            reply = deregister(peers, name)
+ 
+        elif cmd == "TEARDOWN-DHT":
+            name = parts[1]
+
+            reply = teardown(dht, name)
+ 
+        elif cmd == "TEARDOWN-COMPLETE":
+            name = parts[1]
+            
+            reply = teardown_complete(peers, dht, name)
+ 
         else:
             reply = "FAILURE"
 
