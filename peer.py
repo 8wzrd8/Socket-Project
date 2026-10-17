@@ -3,6 +3,7 @@ import sys
 import threading
 import csv
 import random
+import time
 from enum import IntEnum
 from sympy import nextprime
 
@@ -83,7 +84,12 @@ def register(args):
     state["msock"].bind(("", mport))
 
     state["psock"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    state["psock"].bind(("", pport))
+    #buggy testing had t oadd a bigger buffer
+    try:
+        state["psock"].setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
+    except OSError:
+        pass 
+    state["psock"].bind(("", pport)
 
     #start listeing for peere to peer messages
     threading.Thread(target=p2plistener, daemon=True).start()
@@ -100,6 +106,11 @@ def send_store(target_id, pos, fields):
     msg = f"STORE|{target_id}|{pos}|{record_str}"
     _, ip, pport = state["neighbor"]
     state["psock"].sendto(msg.encode(), (ip, pport))
+
+    #there were timing issues with the threads, querries
+    #werent being delivered when they showed up so I added this 
+    #and it fixed it
+    time.sleep(0.0002)
 
 
 def p2p_setid(idn, ringn, tuples_str):
