@@ -89,7 +89,7 @@ def register(args):
         state["psock"].setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
     except OSError:
         pass 
-    state["psock"].bind(("", pport)
+    state["psock"].bind(("", pport))
 
     #start listeing for peere to peer messages
     threading.Thread(target=p2plistener, daemon=True).start()
